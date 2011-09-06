@@ -50,7 +50,7 @@ public final class ImageManager {
 
         LoadedBitmap(final Bitmap bitmap, final boolean strong) {
             this.bitmap = strong ? bitmap : null;
-            this.weakBitmap = strong ? new WeakReference<Bitmap>(bitmap) : null;
+            this.weakBitmap = strong ? null : new WeakReference<Bitmap>(bitmap);
         }
 
         Bitmap getBitmap() {
