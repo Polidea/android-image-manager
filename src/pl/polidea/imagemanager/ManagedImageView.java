@@ -10,9 +10,9 @@ import android.util.AttributeSet;
 import android.view.View;
 
 /**
- * Image view using {@link pl.polidea.imagemanager.ImageManager}. This view can be connected
- * to your view hierarchy (no visual editor support yet!) and provides many
- * options to gain drawing performance or use less memory.
+ * Image view using {@link pl.polidea.imagemanager.ImageManager}. This view can
+ * be connected to your view hierarchy (no visual editor support yet!) and
+ * provides many options to gain drawing performance or use less memory.
  * 
  * @see pl.polidea.imagemanager.ImageManager
  * @author karooolek
@@ -287,7 +287,7 @@ public final class ManagedImageView extends View {
         }
 
         // get bitmap from manager
-        final Bitmap bmp = load();
+        final Bitmap bmp = ImageManager.getImage(req);
         if (bmp == null || bmp.isRecycled()) {
             redrawManagedImageViews();
             return;
