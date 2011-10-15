@@ -9,6 +9,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import android.app.Application;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapFactory.Options;
@@ -44,6 +45,11 @@ public final class ImageManager {
 
     private static final String TAG = ImageManager.class.getSimpleName();
 
+    /**
+     * Loaded bitmap helper class.
+     * 
+     * @author karooolek
+     */
     private static final class LoadedBitmap {
         private final WeakReference<Bitmap> weakBitmap;
         private final Bitmap bitmap;
@@ -58,15 +64,20 @@ public final class ImageManager {
         }
     }
 
-    private ImageManager() {
-        // unreachable private constructor
-    }
-
+    private static Application application;
     private static long start;
     private static boolean logging = true;
     static Map<ImageManagerRequest, LoadedBitmap> loaded = new ConcurrentHashMap<ImageManagerRequest, LoadedBitmap>();
     static List<ImageManagerRequest> requests = new ArrayList<ImageManagerRequest>();
     static BlockingQueue<ImageManagerRequest> loadQueue = new LinkedBlockingQueue<ImageManagerRequest>();
+
+    private ImageManager() {
+        // unreachable private constructor
+    }
+
+    public static void init(final Application application) {
+        ImageManager.application = application;
+    }
 
     /**
      * Load image request. Loads synchronously image specified by request. Adds
@@ -115,7 +126,7 @@ public final class ImageManager {
 
         // load from resources
         if (req.resId >= 0) {
-            bmp = BitmapFactory.decodeResource(req.resources, req.resId, opts);
+            bmp = BitmapFactory.decodeResource(application.getResources(), req.resId, opts);
         }
 
         // scaling options
@@ -332,7 +343,7 @@ public final class ImageManager {
             BitmapFactory.decodeFile(req.filename, options);
         }
         if (req.resId >= 0) {
-            BitmapFactory.decodeResource(req.resources, req.resId, options);
+            BitmapFactory.decodeResource(application.getResources(), req.resId, options);
         }
         return new Point(options.outWidth, options.outHeight);
     }

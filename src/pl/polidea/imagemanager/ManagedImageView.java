@@ -1,11 +1,13 @@
 package pl.polidea.imagemanager;
 
+import android.app.Application;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.util.AttributeSet;
 import android.view.View;
 
@@ -25,7 +27,7 @@ public final class ManagedImageView extends View {
     private static final int IMAGE_REFRESH_TIME = 1000;
 
     // image drawing settings
-    private final ImageManagerRequest req = new ImageManagerRequest(null);
+    private final ImageManagerRequest req = new ImageManagerRequest();
     private boolean keepRatio = true;
     private boolean fillWholeView = false;
 
@@ -39,13 +41,13 @@ public final class ManagedImageView extends View {
 
     public ManagedImageView(final Context context) {
         super(context);
-        req.resources = context.getResources();
+        ImageManager.init((Application) getContext().getApplicationContext());
     }
 
     public ManagedImageView(final Context context, final AttributeSet attr) {
         super(context, attr);
+        ImageManager.init((Application) getContext().getApplicationContext());
         // TODO support for creating from XML
-        req.resources = context.getResources();
     }
 
     /**
@@ -57,6 +59,7 @@ public final class ManagedImageView extends View {
     public void setImage(final String filename) {
         req.filename = filename;
         req.resId = -1;
+        req.uri = null;
         redrawManagedImageViews();
     }
 
@@ -64,11 +67,25 @@ public final class ManagedImageView extends View {
      * Set image from resources.
      * 
      * @param resId
-     *            bitmap resource id.
+     *            image resource id.
      */
     public void setImage(final int resId) {
         req.resId = resId;
         req.filename = null;
+        req.uri = null;
+        redrawManagedImageViews();
+    }
+
+    /**
+     * Set image from URI.
+     * 
+     * @param uri
+     *            image URI.
+     */
+    public void setImage(final Uri uri) {
+        req.uri = uri;
+        req.filename = null;
+        req.resId = -1;
         redrawManagedImageViews();
     }
 
@@ -277,13 +294,8 @@ public final class ManagedImageView extends View {
         }
 
         // no or invalid image request
-        if (req == null || (req.filename == null && req.resId < 0)) {
+        if (req == null || (req.filename == null && req.resId < 0 && req.uri == null)) {
             return;
-        }
-
-        // update request context
-        if (req.resId >= 0) {
-            req.resources = getContext().getResources();
         }
 
         // get bitmap from manager

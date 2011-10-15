@@ -1,6 +1,6 @@
 package pl.polidea.imagemanager;
 
-import android.content.res.Resources;
+import android.net.Uri;
 
 /**
  * Image manager request. This is image manager helper class and public
@@ -17,14 +17,14 @@ public final class ImageManagerRequest {
     public String filename = null;
 
     /**
-     * Resources containing image.
-     */
-    public Resources resources = null;
-
-    /**
      * Image resoucrce ID in resources.
      */
     public int resId = -1;
+
+    /**
+     * Image resource URI.
+     */
+    public Uri uri = null;
 
     /**
      * Sub-sampling value.
@@ -52,6 +52,13 @@ public final class ImageManagerRequest {
     public boolean strong = false;
 
     /**
+     * Create unspecified request.
+     */
+    public ImageManagerRequest() {
+        // empty default constructor
+    }
+
+    /**
      * Create image request to image from file system.
      * 
      * @param filename
@@ -64,16 +71,26 @@ public final class ImageManagerRequest {
     /**
      * Create image request to image from resources.
      * 
-     * @param resources
-     *            resources.
      * @param resId
      *            resource ID.
      */
-    public ImageManagerRequest(final Resources resources, final int resId) {
-        this.resources = resources;
+    public ImageManagerRequest(final int resId) {
         this.resId = resId;
     }
 
+    /**
+     * Create image request to image from URI (ex. Internet).
+     * 
+     * @param uri
+     *            URI.
+     */
+    public ImageManagerRequest(final Uri uri) {
+        this.uri = uri;
+    }
+
+    /*
+     * @see java.lang.Object#hashCode()
+     */
     @Override
     public int hashCode() {
         final int prime = 31;
@@ -84,6 +101,7 @@ public final class ImageManagerRequest {
         result = prime * result + resId;
         result = prime * result + (strong ? 1231 : 1237);
         result = prime * result + subsample;
+        result = prime * result + ((uri == null) ? 0 : uri.hashCode());
         result = prime * result + width;
         return result;
     }
@@ -122,6 +140,13 @@ public final class ImageManagerRequest {
         if (subsample != other.subsample) {
             return false;
         }
+        if (uri == null) {
+            if (other.uri != null) {
+                return false;
+            }
+        } else if (!uri.equals(other.uri)) {
+            return false;
+        }
         if (width != other.width) {
             return false;
         }
@@ -130,8 +155,8 @@ public final class ImageManagerRequest {
 
     @Override
     public String toString() {
-        return "[filename=" + filename + ", resId=" + resId + ", subsample=" + subsample + ", width=" + width
-                + ", height=" + height + ", preview=" + preview + ", strong=" + strong + "]";
+        return "[filename=" + filename + ", resId=" + resId + ", uri=" + uri + ", subsample=" + subsample + ", width="
+                + width + ", height=" + height + ", preview=" + preview + ", strong=" + strong + "]";
     }
 
 }
