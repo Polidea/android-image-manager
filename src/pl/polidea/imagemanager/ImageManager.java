@@ -1,7 +1,14 @@
 package pl.polidea.imagemanager;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.ref.WeakReference;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -9,11 +16,19 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+
 import android.app.Application;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapFactory.Options;
 import android.graphics.Point;
+import android.net.Uri;
 import android.util.Log;
 
 /**
@@ -67,16 +82,54 @@ public final class ImageManager {
     private static Application application;
     private static long start;
     private static boolean logging = true;
-    static Map<ImageManagerRequest, LoadedBitmap> loaded = new ConcurrentHashMap<ImageManagerRequest, LoadedBitmap>();
-    static List<ImageManagerRequest> requests = new ArrayList<ImageManagerRequest>();
-    static BlockingQueue<ImageManagerRequest> loadQueue = new LinkedBlockingQueue<ImageManagerRequest>();
+    private static List<ImageManagerRequest> requests = new ArrayList<ImageManagerRequest>();
+    private static BlockingQueue<ImageManagerRequest> loadQueue = new LinkedBlockingQueue<ImageManagerRequest>();
+    private static ImageManagerRequest loadingReq;
+    private static Map<ImageManagerRequest, LoadedBitmap> loaded = new ConcurrentHashMap<ImageManagerRequest, LoadedBitmap>();
+    private static BlockingQueue<Uri> downloadQueue = new LinkedBlockingQueue<Uri>();
+    private static Uri downloadingUri;
 
     private ImageManager() {
         // unreachable private constructor
     }
 
+    /**
+     * Initialize image manager for application.
+     * 
+     * @param application
+     *            application context.
+     */
     public static void init(final Application application) {
         ImageManager.application = application;
+    }
+
+    private static boolean isImageLoaded(final ImageManagerRequest req) {
+        return loaded.containsKey(req);
+    }
+
+    private static boolean isImageLoading(final ImageManagerRequest req) {
+        return loadQueue.contains(req) || loadingReq != null && loadingReq.equals(req);
+    }
+
+    private static Bitmap getLoadedBitmap(final ImageManagerRequest req) {
+        return isImageLoaded(req) ? loaded.get(req).getBitmap() : null;
+    }
+
+    private static String getFilenameForUri(final Uri uri) {
+        return application.getCacheDir() + "/image_manager/" + String.valueOf(uri.toString().hashCode());
+    }
+
+    private static boolean isImageDownloaded(final Uri uri) {
+        if (isImageDownloading(uri)) {
+            return false;
+        }
+
+        final File file = new File(getFilenameForUri(uri));
+        return file.exists() && !file.isDirectory();
+    }
+
+    private static boolean isImageDownloading(final Uri uri) {
+        return downloadQueue.contains(uri) || downloadingUri != null && downloadingUri.equals(uri);
     }
 
     /**
@@ -129,12 +182,34 @@ public final class ImageManager {
             bmp = BitmapFactory.decodeResource(application.getResources(), req.resId, opts);
         }
 
+        // load from uri
+        if (req.uri != null) {
+            final String filename = getFilenameForUri(req.uri);
+
+            if (!isImageDownloaded(req.uri)) {
+                if (logging) {
+                    Log.d(TAG, "Error while loading image " + req + ". File was not downloaded.");
+                }
+                return null;
+            }
+
+            bmp = BitmapFactory.decodeFile(filename, opts);
+        }
+
         // scaling options
         if (!preview && (req.width > 0 && req.height > 0)) {
             final Bitmap sBmp = Bitmap.createScaledBitmap(bmp, req.width, req.height, true);
             if (sBmp != null) {
                 bmp.recycle();
                 bmp = sBmp;
+            }
+        }
+
+        if (logging) {
+            if (preview) {
+                Log.d(TAG, "Preview image " + req + " loaded");
+            } else {
+                Log.d(TAG, "Full image " + req + " loaded");
             }
         }
 
@@ -151,13 +226,91 @@ public final class ImageManager {
         if (logging) {
             Log.d(TAG, "Unloading image " + req);
         }
+
         requests.remove(req);
         loadQueue.remove(req);
-        final Bitmap bmp = loaded.get(req).getBitmap();
+        final Bitmap bmp = getLoadedBitmap(req);
         if (bmp != null) {
             bmp.recycle();
         }
+
         loaded.remove(req);
+        if (logging) {
+            Log.d(TAG, "Image " + req + " unloaded");
+        }
+    }
+
+    private static void readFile(final File filename, final InputStream inputStream) throws IOException {
+        final byte[] buffer = new byte[1024];
+        final OutputStream out = new FileOutputStream(filename);
+        try {
+            int r = inputStream.read(buffer);
+            while (r != -1) {
+                out.write(buffer, 0, r);
+                out.flush();
+                r = inputStream.read(buffer);
+            }
+        } finally {
+            try {
+                out.flush();
+            } finally {
+                out.close();
+            }
+        }
+    }
+
+    /**
+     * Download image from specified URI to specified file in file system.
+     * 
+     * @param uri
+     *            image URI.
+     * @param filename
+     *            image file name to download.
+     * @throws URISyntaxException
+     *             thrown when URI is invalid.
+     * @throws ClientProtocolException
+     *             thrown when there is problem with connecting.
+     * @throws IOException
+     *             thrown when there is problem with connecting.
+     */
+    public static void downloadImage(final Uri uri, final String filename) throws URISyntaxException,
+            ClientProtocolException, IOException {
+        if (logging) {
+            Log.d(TAG, "Downloading image from " + uri);
+        }
+
+        // connect to uri
+        final DefaultHttpClient client = new DefaultHttpClient();
+        final HttpGet getRequest = new HttpGet(new URI(uri.toString()));
+        final HttpResponse response = client.execute(getRequest);
+        final int statusCode = response.getStatusLine().getStatusCode();
+        if (statusCode != HttpStatus.SC_OK) {
+            Log.w(TAG, "Error " + statusCode + " while retrieving file from " + uri);
+        }
+
+        // create file
+        final File file = new File(filename);
+        final File parent = new File(file.getParent());
+        if (!parent.exists() && !parent.mkdir()) {
+            Log.w(TAG, "Parent directory doesn't exist");
+        }
+
+        // download
+        final HttpEntity entity = response.getEntity();
+        if (entity == null) {
+            Log.w(TAG, "Null entity received when downloading " + uri);
+        }
+        final InputStream inputStream = entity.getContent();
+        try {
+            readFile(file, new BufferedInputStream(inputStream, 1024));
+        } finally {
+            inputStream.close();
+            entity.consumeContent();
+        }
+
+        if (logging) {
+            Log.d(TAG, "Image from " + uri + " downloaded");
+        }
     }
 
     /**
@@ -172,9 +325,14 @@ public final class ImageManager {
             if (logging) {
                 Log.d(TAG, "Unloading image " + req);
             }
-            final Bitmap bmp = loaded.get(req).getBitmap();
+
+            final Bitmap bmp = getLoadedBitmap(req);
             if (bmp != null) {
                 bmp.recycle();
+            }
+
+            if (logging) {
+                Log.d(TAG, "Image " + req + " unloaded");
             }
         }
         loaded.clear();
@@ -194,9 +352,6 @@ public final class ImageManager {
         final Thread t = new Thread(TAG) {
             @Override
             public void run() {
-                // save start time
-                start = System.currentTimeMillis();
-
                 if (logging) {
                     Log.d(TAG, "Image loading thread started");
                 }
@@ -205,43 +360,92 @@ public final class ImageManager {
                 final boolean exit = false;
                 while (!exit) {
                     // get loading request
-                    ImageManagerRequest req;
                     try {
-                        req = loadQueue.take();
+                        loadingReq = loadQueue.take();
                     } catch (final InterruptedException e) {
                         break;
                     }
 
                     try {
                         // load bitmap
-                        final Bitmap bmp = loadImage(req, false);
+                        final Bitmap bmp = loadImage(loadingReq, false);
 
                         // remove preview image
-                        if (loaded.containsKey(req)) {
-                            final Bitmap prevbmp = loaded.get(req).getBitmap();
+                        if (isImageLoaded(loadingReq)) {
+                            final Bitmap prevbmp = getLoadedBitmap(loadingReq);
                             if (prevbmp != null && !prevbmp.isRecycled()) {
                                 if (logging) {
-                                    Log.d(TAG, "Unloading preview image " + req);
+                                    Log.d(TAG, "Unloading preview image " + loadingReq);
                                 }
+
                                 prevbmp.recycle();
+
+                                if (logging) {
+                                    Log.d(TAG, "Preview image " + loadingReq + " unloaded");
+                                }
                             }
                         }
 
                         // save bitmap
-                        loaded.put(req, new LoadedBitmap(bmp, req.strong));
-
-                        // logImageManagerStatus();
+                        loaded.put(loadingReq, new LoadedBitmap(bmp, loadingReq.strong));
                     } catch (final OutOfMemoryError err) {
                         // oh noes! we have no memory for image
                         if (logging) {
-                            Log.e(TAG, "Error while loading full image " + req + ". Out of memory.");
+                            Log.e(TAG, "Error while loading full image " + loadingReq + ". Out of memory.");
+                            logImageManagerStatus();
                         }
+
                         cleanUp();
                     }
+
+                    loadingReq = null;
                 } // while(!exit)
 
                 if (logging) {
                     Log.d(TAG, "Image loading thread ended");
+                }
+            }
+        };
+        t.start();
+    }
+
+    /**
+     * Initialize downloading thread. This is asynchronous thread where images
+     * URIs are processed and downloaded to system.
+     */
+    public static void initDownloadingThread() {
+        final Thread t = new Thread(TAG) {
+            @Override
+            public void run() {
+                if (logging) {
+                    Log.d(TAG, "Image downloading thread started");
+                }
+
+                // loop
+                final boolean exit = false;
+                while (!exit) {
+                    // get downloading URI
+                    try {
+                        downloadingUri = downloadQueue.take();
+                    } catch (final InterruptedException e) {
+                        break;
+                    }
+
+                    try {
+                        // download
+                        downloadImage(downloadingUri, getFilenameForUri(downloadingUri));
+                    } catch (final Exception e) {
+                        // some problems with downloading officer
+                        if (logging) {
+                            Log.e(TAG, "Error while downloading image from " + downloadingUri);
+                        }
+                    }
+
+                    downloadingUri = null;
+                } // while(!exit)
+
+                if (logging) {
+                    Log.d(TAG, "Image downloading thread ended");
                 }
             }
         };
@@ -278,14 +482,10 @@ public final class ImageManager {
     public static void logImageManagerStatus() {
         final float t = 0.001f * (System.currentTimeMillis() - start);
 
-        if (logging) {
-            Log.d(TAG, "Uptime: " + t + "[s]");
-        }
+        Log.d(TAG, "Uptime: " + t + "[s]");
 
         final int imgn = loaded.size();
-        if (logging) {
-            Log.d(TAG, "Loaded images: " + imgn);
-        }
+        Log.d(TAG, "Loaded images: " + imgn);
 
         if (imgn > 0) {
             int totalSize = 0;
@@ -319,14 +519,10 @@ public final class ImageManager {
                 totalSize += bmp.getWidth() * bmp.getHeight() * bpp;
             }
 
-            if (logging) {
-                Log.d(TAG, "Loaded images size: " + totalSize / 1024 + "[kB]");
-            }
+            Log.d(TAG, "Estimated loaded images size: " + totalSize / 1024 + "[kB]");
         }
 
-        if (logging) {
-            Log.d(TAG, "Queued images: " + loadQueue.size());
-        }
+        Log.d(TAG, "Queued images: " + loadQueue.size());
     }
 
     /**
@@ -344,6 +540,9 @@ public final class ImageManager {
         }
         if (req.resId >= 0) {
             BitmapFactory.decodeResource(application.getResources(), req.resId, options);
+        }
+        if (req.uri != null && isImageDownloaded(req.uri)) {
+            BitmapFactory.decodeFile(getFilenameForUri(req.uri), options);
         }
         return new Point(options.outWidth, options.outHeight);
     }
@@ -376,13 +575,25 @@ public final class ImageManager {
         }
 
         // look for bitmap in already loaded resources
-        if (loaded.containsKey(req)) {
-            bmp = loaded.get(req).getBitmap();
+        if (isImageLoaded(req)) {
+            bmp = getLoadedBitmap(req);
         }
 
         // bitmap found
         if (bmp != null) {
             return bmp;
+        }
+
+        // wait until image is not downloaded
+        if (req.uri != null && !isImageDownloaded(req.uri)) {
+            // start download if necessary
+            if (!isImageDownloading(req.uri)) {
+                if (logging) {
+                    Log.d(TAG, "Queuing image " + req + " to download");
+                }
+                downloadQueue.add(req.uri);
+            }
+            return null;
         }
 
         // load preview image quickly
@@ -395,8 +606,6 @@ public final class ImageManager {
 
                 // save preview image
                 loaded.put(req, new LoadedBitmap(bmp, req.strong));
-
-                // logImageManagerStatus();
             } catch (final OutOfMemoryError err) {
                 // oh noes! we have no memory for image
                 if (logging) {
@@ -407,7 +616,7 @@ public final class ImageManager {
         }
 
         // add image to loading queue
-        if (!loadQueue.contains(req)) {
+        if (!isImageLoading(req)) {
             if (logging) {
                 Log.d(TAG, "Queuing image " + req + " to load");
             }
@@ -418,6 +627,8 @@ public final class ImageManager {
     }
 
     static {
+        start = System.currentTimeMillis();
         initLoadingThread();
+        initDownloadingThread();
     }
 }
