@@ -19,7 +19,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
-import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
 
@@ -273,8 +272,7 @@ public final class ImageManager {
      * @throws IOException
      *             thrown when there is problem with connecting.
      */
-    public static void downloadImage(final Uri uri, final String filename) throws URISyntaxException,
-            ClientProtocolException, IOException {
+    public static void downloadImage(final Uri uri, final String filename) throws URISyntaxException, IOException {
         if (logging) {
             Log.d(TAG, "Downloading image from " + uri);
         }
