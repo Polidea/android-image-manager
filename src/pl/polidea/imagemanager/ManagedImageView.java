@@ -298,40 +298,49 @@ public final class ManagedImageView extends View {
             return;
         }
 
+        // redraw sometimes
+        redrawManagedImageViews();
+
+        // get and clip drawing size
+        final int w = getWidth() - getPaddingLeft() - getPaddingRight();
+        final int h = getHeight() - getPaddingTop() - getPaddingBottom();
+        if (w < 0 || h < 0) {
+            // lol this is funny ;>
+            return;
+        }
+        canvas.clipRect(getPaddingLeft(), getPaddingTop(), getPaddingLeft() + w, getPaddingTop() + h);
+
         // get bitmap from manager
         final Bitmap bmp = ImageManager.getImage(req);
         if (bmp == null || bmp.isRecycled()) {
-            redrawManagedImageViews();
             return;
         }
 
-        // bitmap size matches view size
-        if (bmp.getWidth() == getWidth() && bmp.getHeight() == getHeight()) {
-            canvas.drawBitmap(bmp, 0, 0, p);
+        if (bmp.getWidth() == w && bmp.getHeight() == h) {
+            // bitmap size matches exactle drawing size
+            canvas.drawBitmap(bmp, getPaddingLeft(), getPaddingTop(), p);
         } else {
             // draw rescaled
-            final float sx = (float) getWidth() / bmp.getWidth();
-            final float sy = (float) getHeight() / bmp.getHeight();
+            final float sx = (float) w / bmp.getWidth();
+            final float sy = (float) h / bmp.getHeight();
             if (keepRatio) {
                 final float s = fillWholeView ? Math.max(sx, sy) : Math.min(sx, sy);
-                final float dx = 0.5f * (getWidth() - s * bmp.getWidth());
-                final float dy = 0.5f * (getHeight() - s * bmp.getHeight());
+                final float dx = 0.5f * (w - s * bmp.getWidth()) + getPaddingLeft();
+                final float dy = 0.5f * (h - s * bmp.getHeight()) + getPaddingTop();
                 m.setTranslate(dx, dy);
                 m.preScale(s, s);
             } else {
-                m.setScale(sx, sy);
+                m.setTranslate(getPaddingLeft(), getPaddingTop());
+                m.preScale(sx, sy);
             }
             canvas.drawBitmap(bmp, m, p);
 
         }
-
-        // redraw sometimes
-        redrawManagedImageViews();
     }
 
     /**
      * Redraw visible managed image views. Since view is based on asynchronous
-     * it has to refresh it's content every {@link IMAGE_REFRESH_TIME}.
+     * it has to refresh it's content every 1 second.
      */
     private void redrawManagedImageViews() {
         final long t = System.currentTimeMillis();
