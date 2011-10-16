@@ -41,13 +41,42 @@ public final class ManagedImageView extends View {
 
     public ManagedImageView(final Context context) {
         super(context);
-        ImageManager.init((Application) getContext().getApplicationContext());
+
+        if (!isInEditMode()) {
+            ImageManager.init((Application) getContext().getApplicationContext());
+        }
     }
 
     public ManagedImageView(final Context context, final AttributeSet attr) {
         super(context, attr);
-        ImageManager.init((Application) getContext().getApplicationContext());
-        // TODO support for creating from XML
+
+        if (!isInEditMode()) {
+            ImageManager.init((Application) getContext().getApplicationContext());
+        }
+
+        for (int i = 0; i != attr.getAttributeCount(); ++i) {
+            final String attrName = attr.getAttributeName(i);
+            if ("image_filename".equals(attrName)) {
+                setImage(attr.getAttributeValue(i));
+            } else if ("image_resource".equals(attrName)) {
+                setImage(attr.getAttributeResourceValue(i, 0));
+            } else if ("image_uri".equals(attrName)) {
+                setImage(Uri.parse(attr.getAttributeValue(i)));
+            } else if ("subsampling".equals(attrName)) {
+                setSubsampling(attr.getAttributeUnsignedIntValue(i, 1));
+            } else if ("anti_alias".equals(attrName)) {
+                setAntiAliasing(attr.getAttributeBooleanValue(i, false));
+            } else if ("keep_ratio".equals(attrName)) {
+                setKeepAspectRatio(attr.getAttributeBooleanValue(i, true));
+            } else if ("fill_whole_view".equals(attrName)) {
+                setFillWholeView(attr.getAttributeBooleanValue(i, true));
+            } else if ("preview".equals(attrName)) {
+                setPreviewEnabled(attr.getAttributeBooleanValue(i, true));
+            } else if ("strong_cache".equals(attrName)) {
+                setKeepStrongCache(attr.getAttributeBooleanValue(i, false));
+            }
+            // TODO desired dimensions
+        }
     }
 
     /**
@@ -291,6 +320,11 @@ public final class ManagedImageView extends View {
         if (bg != null) {
             bg.setBounds(0, 0, getWidth(), getHeight());
             bg.draw(canvas);
+        }
+
+        // not drawing in edit mode
+        if (isInEditMode()) {
+            return;
         }
 
         // no or invalid image request
