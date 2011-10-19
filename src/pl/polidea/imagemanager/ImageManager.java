@@ -60,6 +60,120 @@ public final class ImageManager {
     private static final String TAG = ImageManager.class.getSimpleName();
 
     /**
+     * Image load thread helper class.
+     * 
+     * @author karooolek
+     */
+    private static final class LoadThread extends Thread {
+        private LoadThread() {
+            super(TAG);
+        }
+
+        @Override
+        public void run() {
+            if (logging) {
+                Log.d(TAG, "Image loading thread started");
+            }
+
+            // loop
+            final boolean exit = false;
+            while (!exit) {
+                // get loading request
+                ImageManagerRequest req = null;
+                try {
+                    loadingReqs.add(req = loadQueue.take());
+                } catch (final InterruptedException e) {
+                    break;
+                }
+
+                try {
+                    // load bitmap
+                    final Bitmap bmp = loadImage(req, false);
+
+                    // remove preview image
+                    if (isImageLoaded(req)) {
+                        final Bitmap prevbmp = getLoadedBitmap(req);
+                        if (prevbmp != null && !prevbmp.isRecycled()) {
+                            if (logging) {
+                                Log.d(TAG, "Unloading preview image " + req);
+                            }
+
+                            prevbmp.recycle();
+
+                            if (logging) {
+                                Log.d(TAG, "Preview image " + req + " unloaded");
+                            }
+                        }
+                    }
+
+                    // save bitmap
+                    loaded.put(req, new LoadedBitmap(bmp, req.strong));
+                } catch (final OutOfMemoryError err) {
+                    // oh noes! we have no memory for image
+                    if (logging) {
+                        Log.e(TAG, "Error while loading full image " + req + ". Out of memory.");
+                        logImageManagerStatus();
+                    }
+
+                    cleanUp();
+                }
+
+                loadingReqs.remove(req);
+            } // while(!exit)
+
+            if (logging) {
+                Log.d(TAG, "Image loading thread ended");
+            }
+        }
+    }
+
+    /**
+     * Image download thread helper class.
+     * 
+     * @author karooolek
+     */
+    private static final class DownloadThread extends Thread {
+        private DownloadThread() {
+            super(TAG);
+        }
+
+        @Override
+        public void run() {
+            if (logging) {
+                Log.d(TAG, "Image downloading thread started");
+            }
+
+            // loop
+            final boolean exit = false;
+            while (!exit) {
+                // get downloading URI
+                Uri uri = null;
+                try {
+                    downloadingUris.add(uri = downloadQueue.take());
+                } catch (final InterruptedException e) {
+                    break;
+                }
+
+                try {
+                    // download
+                    downloadImage(uri, getFilenameForUri(uri));
+                } catch (final Exception e) {
+                    // some problems with downloading officer
+                    if (logging) {
+                        Log.e(TAG, "Error while downloading image from " + uri);
+                    }
+                }
+
+                downloadingUris.remove(uri);
+            } // while(!exit)
+
+            if (logging) {
+                Log.d(TAG, "Image downloading thread ended");
+            }
+        }
+    }
+
+    /**
      * Loaded bitmap helper class.
      * 
      * @author karooolek
@@ -83,10 +197,10 @@ public final class ImageManager {
     private static boolean logging = false;
     private static List<ImageManagerRequest> requests = new ArrayList<ImageManagerRequest>();
     private static BlockingQueue<ImageManagerRequest> loadQueue = new LinkedBlockingQueue<ImageManagerRequest>();
-    private static ImageManagerRequest loadingReq;
+    private static List<ImageManagerRequest> loadingReqs = new ArrayList<ImageManagerRequest>();
     private static Map<ImageManagerRequest, LoadedBitmap> loaded = new ConcurrentHashMap<ImageManagerRequest, LoadedBitmap>();
     private static BlockingQueue<Uri> downloadQueue = new LinkedBlockingQueue<Uri>();
-    private static Uri downloadingUri;
+    private static List<Uri> downloadingUris = new ArrayList<Uri>();
 
     private ImageManager() {
         // unreachable private constructor
@@ -107,7 +221,14 @@ public final class ImageManager {
     }
 
     private static boolean isImageLoading(final ImageManagerRequest req) {
-        return loadQueue.contains(req) || loadingReq != null && loadingReq.equals(req);
+        return loadQueue.contains(req) || loadingReqs.contains(req);
+    }
+
+    private static void queueImageLoad(final ImageManagerRequest req) {
+        if (logging) {
+            Log.d(TAG, "Queuing image " + req + " to load");
+        }
+        loadQueue.add(req);
     }
 
     private static Bitmap getLoadedBitmap(final ImageManagerRequest req) {
@@ -128,7 +249,14 @@ public final class ImageManager {
     }
 
     private static boolean isImageDownloading(final Uri uri) {
-        return downloadQueue.contains(uri) || downloadingUri != null && downloadingUri.equals(uri);
+        return downloadQueue.contains(uri) || downloadingUris.contains(uri);
+    }
+
+    private static void queueImageDownload(final ImageManagerRequest req) {
+        if (logging) {
+            Log.d(TAG, "Queuing image " + req + " to download");
+        }
+        downloadQueue.add(req.uri);
     }
 
     /**
@@ -312,23 +440,23 @@ public final class ImageManager {
     }
 
     /**
-     * Clean up image manager. Unloads all cached images.
+     * Clean up image manager. Unloads all cached images. Deletes all downloaded images.
      */
     public static synchronized void cleanUp() {
         if (logging) {
             Log.d(TAG, "Image manager clean up");
         }
-
+    
         for (final ImageManagerRequest req : loaded.keySet()) {
             if (logging) {
                 Log.d(TAG, "Unloading image " + req);
             }
-
+    
             final Bitmap bmp = getLoadedBitmap(req);
             if (bmp != null) {
                 bmp.recycle();
             }
-
+    
             if (logging) {
                 Log.d(TAG, "Image " + req + " unloaded");
             }
@@ -336,118 +464,10 @@ public final class ImageManager {
         loaded.clear();
         loadQueue.clear();
         requests.clear();
-
+    
         if (logging) {
             logImageManagerStatus();
         }
-    }
-
-    /**
-     * Initialize image manager loading thread. This is asynchronous thread
-     * where image request are processed and loaded to cache.
-     */
-    public static void initLoadingThread() {
-        final Thread t = new Thread(TAG) {
-            @Override
-            public void run() {
-                if (logging) {
-                    Log.d(TAG, "Image loading thread started");
-                }
-
-                // loop
-                final boolean exit = false;
-                while (!exit) {
-                    // get loading request
-                    try {
-                        loadingReq = loadQueue.take();
-                    } catch (final InterruptedException e) {
-                        break;
-                    }
-
-                    try {
-                        // load bitmap
-                        final Bitmap bmp = loadImage(loadingReq, false);
-
-                        // remove preview image
-                        if (isImageLoaded(loadingReq)) {
-                            final Bitmap prevbmp = getLoadedBitmap(loadingReq);
-                            if (prevbmp != null && !prevbmp.isRecycled()) {
-                                if (logging) {
-                                    Log.d(TAG, "Unloading preview image " + loadingReq);
-                                }
-
-                                prevbmp.recycle();
-
-                                if (logging) {
-                                    Log.d(TAG, "Preview image " + loadingReq + " unloaded");
-                                }
-                            }
-                        }
-
-                        // save bitmap
-                        loaded.put(loadingReq, new LoadedBitmap(bmp, loadingReq.strong));
-                    } catch (final OutOfMemoryError err) {
-                        // oh noes! we have no memory for image
-                        if (logging) {
-                            Log.e(TAG, "Error while loading full image " + loadingReq + ". Out of memory.");
-                            logImageManagerStatus();
-                        }
-
-                        cleanUp();
-                    }
-
-                    loadingReq = null;
-                } // while(!exit)
-
-                if (logging) {
-                    Log.d(TAG, "Image loading thread ended");
-                }
-            }
-        };
-        t.start();
-    }
-
-    /**
-     * Initialize downloading thread. This is asynchronous thread where images
-     * URIs are processed and downloaded to system.
-     */
-    public static void initDownloadingThread() {
-        final Thread t = new Thread(TAG) {
-            @Override
-            public void run() {
-                if (logging) {
-                    Log.d(TAG, "Image downloading thread started");
-                }
-
-                // loop
-                final boolean exit = false;
-                while (!exit) {
-                    // get downloading URI
-                    try {
-                        downloadingUri = downloadQueue.take();
-                    } catch (final InterruptedException e) {
-                        break;
-                    }
-
-                    try {
-                        // download
-                        downloadImage(downloadingUri, getFilenameForUri(downloadingUri));
-                    } catch (final Exception e) {
-                        // some problems with downloading officer
-                        if (logging) {
-                            Log.e(TAG, "Error while downloading image from " + downloadingUri);
-                        }
-                    }
-
-                    downloadingUri = null;
-                } // while(!exit)
-
-                if (logging) {
-                    Log.d(TAG, "Image downloading thread ended");
-                }
-            }
-        };
-        t.start();
     }
 
     /**
@@ -587,10 +607,7 @@ public final class ImageManager {
         if (req.uri != null && !isImageDownloaded(req.uri)) {
             // start download if necessary
             if (!isImageDownloading(req.uri)) {
-                if (logging) {
-                    Log.d(TAG, "Queuing image " + req + " to download");
-                }
-                downloadQueue.add(req.uri);
+                queueImageDownload(req);
             }
             return null;
         }
@@ -616,18 +633,22 @@ public final class ImageManager {
 
         // add image to loading queue
         if (!isImageLoading(req)) {
-            if (logging) {
-                Log.d(TAG, "Queuing image " + req + " to load");
-            }
-            loadQueue.add(req);
+            queueImageLoad(req);
         }
 
         return bmp;
     }
 
     static {
+        // save starting time
         start = System.currentTimeMillis();
-        initLoadingThread();
-        initDownloadingThread();
+
+        // start threads
+        new LoadThread().start();
+        new LoadThread().start();
+        new LoadThread().start();
+        new DownloadThread().start();
+        new DownloadThread().start();
+        new DownloadThread().start();
     }
 }
