@@ -80,7 +80,7 @@ public final class ImageManager {
 
     private static Application application;
     private static long start;
-    private static boolean logging = true;
+    private static boolean logging = false;
     private static List<ImageManagerRequest> requests = new ArrayList<ImageManagerRequest>();
     private static BlockingQueue<ImageManagerRequest> loadQueue = new LinkedBlockingQueue<ImageManagerRequest>();
     private static ImageManagerRequest loadingReq;
@@ -451,7 +451,8 @@ public final class ImageManager {
     }
 
     /**
-     * Check if image manager logging is enabled.
+     * Check if image manager logging is enabled. By default logging is
+     * disabled.
      * 
      * @return true if image manager logging is enabled, false otherwise.
      */
