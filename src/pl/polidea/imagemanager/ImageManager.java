@@ -354,14 +354,13 @@ public final class ImageManager {
             Log.d(TAG, "Unloading image " + req);
         }
 
-        requests.remove(req);
-        loadQueue.remove(req);
         final Bitmap bmp = getLoadedBitmap(req);
         if (bmp != null) {
             bmp.recycle();
         }
 
         loaded.remove(req);
+
         if (logging) {
             Log.d(TAG, "Image " + req + " unloaded");
         }
@@ -402,7 +401,7 @@ public final class ImageManager {
      */
     public static void downloadImage(final Uri uri, final String filename) throws URISyntaxException, IOException {
         if (logging) {
-            Log.d(TAG, "Downloading image from " + uri);
+            Log.d(TAG, "Downloading image from " + uri + " to " + filename);
         }
 
         // connect to uri
@@ -435,37 +434,73 @@ public final class ImageManager {
         }
 
         if (logging) {
-            Log.d(TAG, "Image from " + uri + " downloaded");
+            Log.d(TAG, "Image from " + uri + " downloaded to " + filename);
         }
     }
 
     /**
-     * Clean up image manager. Unloads all cached images. Deletes all downloaded images.
+     * Delete specified file from download cache.
+     * 
+     * @param filename
+     *            file name.
+     */
+    public static void deleteImage(final String filename) {
+        if (logging) {
+            Log.d(TAG, "Deleting image " + filename);
+        }
+
+        final File file = new File(filename);
+        if (!file.delete() && logging) {
+            Log.w(TAG, "Image " + filename + " couldn't be deleted");
+        }
+
+        if (logging) {
+            Log.d(TAG, "Image " + filename + " deleted");
+        }
+    }
+
+    /**
+     * Clean up image manager. Unloads all cached images. Deletes all downloaded
+     * images.
      */
     public static synchronized void cleanUp() {
+        final long t = System.currentTimeMillis();
+
         if (logging) {
             Log.d(TAG, "Image manager clean up");
         }
-    
-        for (final ImageManagerRequest req : loaded.keySet()) {
-            if (logging) {
-                Log.d(TAG, "Unloading image " + req);
+
+        // unload all images
+        while (!loaded.isEmpty()) {
+            final ImageManagerRequest req = loaded.keySet().iterator().next();
+            unloadImage(req);
+        }
+
+        // delete downloaded files
+        final File dir = new File(application.getCacheDir() + "/image_manager/");
+        if (dir.exists() && dir.isDirectory()) {
+            final File[] files = dir.listFiles();
+            for (int i = 0; i != files.length; ++i) {
+                deleteImage(files[i].getAbsolutePath());
             }
-    
-            final Bitmap bmp = getLoadedBitmap(req);
-            if (bmp != null) {
-                bmp.recycle();
-            }
-    
+
             if (logging) {
-                Log.d(TAG, "Image " + req + " unloaded");
+                Log.d(TAG, "Deleting directory " + dir.getAbsolutePath());
+            }
+
+            if (!dir.delete() && logging) {
+                Log.w(TAG, "Directory " + dir.getAbsolutePath() + " couldn't be deleted");
+            }
+
+            if (logging) {
+                Log.d(TAG, "Directory " + dir.getAbsolutePath() + " deleted");
             }
         }
-        loaded.clear();
-        loadQueue.clear();
-        requests.clear();
-    
+
+        final long dt = System.currentTimeMillis() - t;
+
         if (logging) {
+            Log.d(TAG, "Image manager clean up finished, took " + dt + "[msec]");
             logImageManagerStatus();
         }
     }
@@ -503,9 +538,9 @@ public final class ImageManager {
 
         Log.d(TAG, "Uptime: " + t + "[s]");
 
+        // count loaded images
         final int imgn = loaded.size();
         Log.d(TAG, "Loaded images: " + imgn);
-
         if (imgn > 0) {
             int totalSize = 0;
             for (final LoadedBitmap limg : loaded.values()) {
@@ -541,7 +576,26 @@ public final class ImageManager {
             Log.d(TAG, "Estimated loaded images size: " + totalSize / 1024 + "[kB]");
         }
 
+        // count queued images
         Log.d(TAG, "Queued images: " + loadQueue.size());
+
+        // count downloaded files
+        final File dir = new File(application.getCacheDir() + "/image_manager/");
+        if (dir.isDirectory()) {
+            final File[] files = dir.listFiles();
+
+            Log.d(TAG, "Downloaded images: " + files.length);
+
+            if (files.length > 0) {
+                int totalSize = 0;
+                for (int i = 0; i != files.length; ++i) {
+                    totalSize += files[i].length();
+                }
+                Log.d(TAG, "Estimated downloaded images size: " + totalSize / 1024 + "[kB]");
+            }
+        } else {
+            Log.d(TAG, "Downloaded images: 0");
+        }
     }
 
     /**
