@@ -12,6 +12,7 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -471,8 +472,8 @@ public final class ImageManager {
         }
 
         // unload all images
-        while (!loaded.isEmpty()) {
-            final ImageManagerRequest req = loaded.keySet().iterator().next();
+        final Set<ImageManagerRequest> reqs = loaded.keySet();
+        for (final ImageManagerRequest req : reqs) {
             unloadImage(req);
         }
 
