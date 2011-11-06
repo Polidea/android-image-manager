@@ -297,17 +297,23 @@ public final class ImageManager {
             final File file = new File(req.filename);
             if (!file.exists() || file.isDirectory()) {
                 if (logging) {
-                    Log.d(TAG, "Error while loading image " + req + ". File does not exist.");
+                    Log.e(TAG, "Error while loading image " + req + ". File does not exist.");
                 }
                 return null;
             }
 
             bmp = BitmapFactory.decodeFile(req.filename, opts);
+            if (bmp == null && logging) {
+                Log.e(TAG, "Error while decoding image from file " + req.filename);
+            }
         }
 
         // load from resources
         if (req.resId >= 0) {
             bmp = BitmapFactory.decodeResource(application.getResources(), req.resId, opts);
+            if (bmp == null && logging) {
+                Log.e(TAG, "Error while decoding image from resources id=" + req.resId);
+            }
         }
 
         // load from uri
@@ -316,15 +322,23 @@ public final class ImageManager {
 
             if (!isImageDownloaded(req.uri)) {
                 if (logging) {
-                    Log.d(TAG, "Error while loading image " + req + ". File was not downloaded.");
+                    Log.e(TAG, "Error while loading image " + req + ". File was not downloaded.");
                 }
                 return null;
             }
 
             bmp = BitmapFactory.decodeFile(filename, opts);
+            if (bmp == null && logging) {
+                Log.e(TAG, "Error while decoding image from downloaded file " + filename);
+            }
         }
 
-        // scaling options
+        // error while decoding
+        if (bmp == null) {
+            return null;
+        }
+
+        // rescaling
         if (!preview && (req.width > 0 && req.height > 0)) {
             final Bitmap sBmp = Bitmap.createScaledBitmap(bmp, req.width, req.height, true);
             if (sBmp != null) {
