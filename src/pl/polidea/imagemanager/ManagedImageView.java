@@ -42,17 +42,21 @@ public final class ManagedImageView extends View {
     public ManagedImageView(final Context context) {
         super(context);
 
-        if (!isInEditMode()) {
-            ImageManager.init((Application) getContext().getApplicationContext());
+        if (isInEditMode()) {
+            return;
         }
+
+        ImageManager.init((Application) getContext().getApplicationContext());
     }
 
     public ManagedImageView(final Context context, final AttributeSet attr) {
         super(context, attr);
 
-        if (!isInEditMode()) {
-            ImageManager.init((Application) getContext().getApplicationContext());
+        if (isInEditMode()) {
+            return;
         }
+
+        ImageManager.init((Application) getContext().getApplicationContext());
 
         for (int i = 0; i != attr.getAttributeCount(); ++i) {
             final String attrName = attr.getAttributeName(i);

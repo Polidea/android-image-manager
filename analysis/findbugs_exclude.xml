@@ -9,11 +9,11 @@
 		<Class name="~.*Application|.*Service" />
 		<Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"></Bug>
 	</Match>
-    <Match>
-        <Bug pattern="DM_EXIT"></Bug>
-    </Match>
-    <Match>
-        <Bug code="MS"></Bug>
-    </Match>
+	<Match>
+		<Bug pattern="DM_EXIT"></Bug>
+	</Match>
+	<Match>
+		<Bug code="MS"></Bug>
+	</Match>
 
 </FindBugsFilter>
