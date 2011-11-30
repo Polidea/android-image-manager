@@ -221,7 +221,7 @@ public final class ManagedImageView extends View
      * 
      * @return true if anti-aliasing filter is enabled, false otherwise.
      */
-    public boolean isAntiAliasingOn()
+    public boolean isAntiAliasing()
     {
         return p.isFilterBitmap();
     }
@@ -237,6 +237,29 @@ public final class ManagedImageView extends View
     public void setAntiAliasing(final boolean antiAlias)
     {
         p.setFilterBitmap(antiAlias);
+    }
+
+    /**
+     * Check if dithering is enabled.
+     * 
+     * @return true if dithering is enabled, false otherwise.
+     */
+    public boolean isDithering()
+    {
+        return p.isDither();
+    }
+
+    /**
+     * Enable/disable dithering. Dithering is used when bitmap pixel format differs from output buffer format. Enabling
+     * dithering will give better colors when writing bitmap to buffer with lower bitrate. Dither by default is
+     * disabled.
+     * 
+     * @param dither
+     *            enable/disable dithering.
+     */
+    public void setDithering(final boolean dither)
+    {
+        p.setDither(dither);
     }
 
     /**
