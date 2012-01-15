@@ -19,7 +19,7 @@ import android.view.View;
  * @author karooolek
  * 
  */
-public final class ManagedImageView extends View
+public class ManagedImageView extends View
 {
 
     public static final String TAG = ManagedImageView.class.getSimpleName();
