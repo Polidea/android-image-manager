@@ -1,14 +1,9 @@
 package pl.polidea.imagemanager;
 
-import java.io.BufferedInputStream;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.lang.ref.WeakReference;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,18 +12,11 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.HttpStatus;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.DefaultHttpClient;
-
 import android.app.Application;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapFactory.Options;
 import android.graphics.Point;
-import android.net.Uri;
 import android.util.Log;
 
 /**
@@ -143,65 +131,6 @@ public final class ImageManager
     }
 
     /**
-     * Image download thread helper class.
-     * 
-     * @author karooolek
-     */
-    private static final class DownloadThread extends Thread
-    {
-        private DownloadThread()
-        {
-            super(TAG);
-        }
-
-        @Override
-        public void run()
-        {
-            if (logging)
-            {
-                Log.d(TAG, "Image downloading thread started");
-            }
-
-            // loop
-            final boolean exit = false;
-            while (!exit)
-            {
-                // get downloading URI
-                Uri uri = null;
-                try
-                {
-                    downloadingUris.add(uri = downloadQueue.take());
-                }
-                catch (final InterruptedException e)
-                {
-                    break;
-                }
-
-                try
-                {
-                    // download
-                    downloadImage(uri, getFilenameForUri(uri));
-                }
-                catch (final Exception e)
-                {
-                    // some problems with downloading officer
-                    if (logging)
-                    {
-                        Log.e(TAG, "Error while downloading image from " + uri);
-                    }
-                }
-
-                downloadingUris.remove(uri);
-            } // while(!exit)
-
-            if (logging)
-            {
-                Log.d(TAG, "Image downloading thread ended");
-            }
-        }
-    }
-
-    /**
      * Loaded bitmap helper class.
      * 
      * @author karooolek
@@ -226,12 +155,9 @@ public final class ImageManager
     private static Application application;
     private static long start;
     private static boolean logging = false;
-    private static List<ImageManagerRequest> requests = new ArrayList<ImageManagerRequest>();
     private static BlockingQueue<ImageManagerRequest> loadQueue = new LinkedBlockingQueue<ImageManagerRequest>();
     private static List<ImageManagerRequest> loadingReqs = new ArrayList<ImageManagerRequest>();
     private static Map<ImageManagerRequest, LoadedBitmap> loaded = new ConcurrentHashMap<ImageManagerRequest, LoadedBitmap>();
-    private static BlockingQueue<Uri> downloadQueue = new LinkedBlockingQueue<Uri>();
-    private static List<Uri> downloadingUris = new ArrayList<Uri>();
 
     private ImageManager()
     {
@@ -271,36 +197,6 @@ public final class ImageManager
     private static Bitmap getLoadedBitmap(final ImageManagerRequest req)
     {
         return isImageLoaded(req) ? loaded.get(req).getBitmap() : null;
-    }
-
-    private static String getFilenameForUri(final Uri uri)
-    {
-        return application.getCacheDir() + "/image_manager/" + String.valueOf(uri.toString().hashCode());
-    }
-
-    private static boolean isImageDownloaded(final Uri uri)
-    {
-        if (isImageDownloading(uri))
-        {
-            return false;
-        }
-
-        final File file = new File(getFilenameForUri(uri));
-        return file.exists() && !file.isDirectory();
-    }
-
-    private static boolean isImageDownloading(final Uri uri)
-    {
-        return downloadQueue.contains(uri) || downloadingUris.contains(uri);
-    }
-
-    private static void queueImageDownload(final ImageManagerRequest req)
-    {
-        if (logging)
-        {
-            Log.d(TAG, "Queuing image " + req + " to download");
-        }
-        downloadQueue.add(req.uri);
     }
 
     /**
@@ -354,7 +250,7 @@ public final class ImageManager
         }
 
         // load from resources
-        if (req.resId >= 0)
+        else if (req.resId >= 0)
         {
             bmp = BitmapFactory.decodeResource(application.getResources(), req.resId, opts);
             if (bmp == null && logging)
@@ -364,23 +260,24 @@ public final class ImageManager
         }
 
         // load from uri
-        if (req.uri != null)
+        else if (req.uri != null)
         {
-            final String filename = getFilenameForUri(req.uri);
-
-            if (!isImageDownloaded(req.uri))
+            try
+            {
+                final InputStream is = new URL(req.uri.toString()).openStream();
+                bmp = BitmapFactory.decodeStream(is, null, opts);
+                is.close();
+                if (bmp == null && logging)
+                {
+                    Log.e(TAG, "Error while decoding image from uri " + req.uri);
+                }
+            }
+            catch (final Exception e)
             {
                 if (logging)
                 {
-                    Log.e(TAG, "Error while loading image " + req + ". File was not downloaded.");
+                    Log.e(TAG, "Error while decoding image from uri " + req.uri);
                 }
-                return null;
-            }
-
-            bmp = BitmapFactory.decodeFile(filename, opts);
-            if (bmp == null && logging)
-            {
-                Log.e(TAG, "Error while decoding image from downloaded file " + filename);
             }
         }
 
@@ -427,7 +324,6 @@ public final class ImageManager
         {
             bmp.recycle();
         }
-
         loaded.remove(req);
 
         if (logging)
@@ -436,122 +332,8 @@ public final class ImageManager
         }
     }
 
-    private static void readFile(final File filename, final InputStream inputStream) throws IOException
-    {
-        final byte[] buffer = new byte[1024];
-        final OutputStream out = new FileOutputStream(filename);
-        try
-        {
-            int r = inputStream.read(buffer);
-            while (r != -1)
-            {
-                out.write(buffer, 0, r);
-                out.flush();
-                r = inputStream.read(buffer);
-            }
-        }
-        finally
-        {
-            try
-            {
-                out.flush();
-            }
-            finally
-            {
-                out.close();
-            }
-        }
-    }
-
     /**
-     * Download image from specified URI to specified file in file system.
-     * 
-     * @param uri
-     *            image URI.
-     * @param filename
-     *            image file name to download.
-     * @throws URISyntaxException
-     *             thrown when URI is invalid.
-     * @throws ClientProtocolException
-     *             thrown when there is problem with connecting.
-     * @throws IOException
-     *             thrown when there is problem with connecting.
-     */
-    public static void downloadImage(final Uri uri, final String filename) throws URISyntaxException, IOException
-    {
-        if (logging)
-        {
-            Log.d(TAG, "Downloading image from " + uri + " to " + filename);
-        }
-
-        // connect to uri
-        final DefaultHttpClient client = new DefaultHttpClient();
-        final HttpGet getRequest = new HttpGet(new URI(uri.toString()));
-        final HttpResponse response = client.execute(getRequest);
-        final int statusCode = response.getStatusLine().getStatusCode();
-        if (statusCode != HttpStatus.SC_OK)
-        {
-            Log.w(TAG, "Error " + statusCode + " while retrieving file from " + uri);
-        }
-
-        // create file
-        final File file = new File(filename);
-        final File parent = new File(file.getParent());
-        if (!parent.exists() && !parent.mkdir())
-        {
-            Log.w(TAG, "Parent directory doesn't exist");
-        }
-
-        // download
-        final HttpEntity entity = response.getEntity();
-        if (entity == null)
-        {
-            Log.w(TAG, "Null entity received when downloading " + uri);
-        }
-        final InputStream inputStream = entity.getContent();
-        try
-        {
-            readFile(file, new BufferedInputStream(inputStream, 1024));
-        }
-        finally
-        {
-            inputStream.close();
-            entity.consumeContent();
-        }
-
-        if (logging)
-        {
-            Log.d(TAG, "Image from " + uri + " downloaded to " + filename);
-        }
-    }
-
-    /**
-     * Delete specified file from download cache.
-     * 
-     * @param filename
-     *            file name.
-     */
-    public static void deleteImage(final String filename)
-    {
-        if (logging)
-        {
-            Log.d(TAG, "Deleting image " + filename);
-        }
-
-        final File file = new File(filename);
-        if (!file.delete() && logging)
-        {
-            Log.w(TAG, "Image " + filename + " couldn't be deleted");
-        }
-
-        if (logging)
-        {
-            Log.d(TAG, "Image " + filename + " deleted");
-        }
-    }
-
-    /**
-     * Clean up image manager. Unloads all cached images. Deletes all downloaded images.
+     * Clean up image manager. Unloads all cached images.
      */
     public static synchronized void cleanUp()
     {
@@ -569,37 +351,9 @@ public final class ImageManager
             unloadImage(req);
         }
 
-        // delete downloaded files
-        final File dir = new File(application.getCacheDir() + "/image_manager/");
-        if (dir.exists() && dir.isDirectory())
-        {
-            final File[] files = dir.listFiles();
-            for (int i = 0; i != files.length; ++i)
-            {
-                deleteImage(files[i].getAbsolutePath());
-            }
-
-            if (logging)
-            {
-                Log.d(TAG, "Deleting directory " + dir.getAbsolutePath());
-            }
-
-            if (!dir.delete() && logging)
-            {
-                Log.w(TAG, "Directory " + dir.getAbsolutePath() + " couldn't be deleted");
-            }
-
-            if (logging)
-            {
-                Log.d(TAG, "Directory " + dir.getAbsolutePath() + " deleted");
-            }
-        }
-
-        final long dt = System.currentTimeMillis() - t;
-
         if (logging)
         {
-            Log.d(TAG, "Image manager clean up finished, took " + dt + "[msec]");
+            Log.d(TAG, "Image manager clean up finished, took " + (System.currentTimeMillis() - t) + "[msec]");
             logImageManagerStatus();
         }
     }
@@ -684,29 +438,6 @@ public final class ImageManager
 
         // count queued images
         Log.d(TAG, "Queued images: " + loadQueue.size());
-
-        // count downloaded files
-        final File dir = new File(application.getCacheDir() + "/image_manager/");
-        if (dir.isDirectory())
-        {
-            final File[] files = dir.listFiles();
-
-            Log.d(TAG, "Downloaded images: " + files.length);
-
-            if (files.length > 0)
-            {
-                int totalSize = 0;
-                for (int i = 0; i != files.length; ++i)
-                {
-                    totalSize += files[i].length();
-                }
-                Log.d(TAG, "Estimated downloaded images size: " + totalSize / 1024 + "[kB]");
-            }
-        }
-        else
-        {
-            Log.d(TAG, "Downloaded images: 0");
-        }
     }
 
     /**
@@ -718,21 +449,30 @@ public final class ImageManager
      */
     public static Point getImageSize(final ImageManagerRequest req)
     {
-        final Options options = new Options();
-        options.inJustDecodeBounds = true;
+        final Options opts = new Options();
+        opts.inJustDecodeBounds = true;
         if (req.filename != null)
         {
-            BitmapFactory.decodeFile(req.filename, options);
+            BitmapFactory.decodeFile(req.filename, opts);
         }
         if (req.resId >= 0)
         {
-            BitmapFactory.decodeResource(application.getResources(), req.resId, options);
+            BitmapFactory.decodeResource(application.getResources(), req.resId, opts);
         }
-        if (req.uri != null && isImageDownloaded(req.uri))
+        if (req.uri != null)
         {
-            BitmapFactory.decodeFile(getFilenameForUri(req.uri), options);
+            try
+            {
+                final InputStream is = new URL(req.uri.toString()).openStream();
+                BitmapFactory.decodeStream(is, null, opts);
+                is.close();
+            }
+            catch (final Exception e)
+            {
+                // nothing
+            }
         }
-        return new Point(options.outWidth, options.outHeight);
+        return new Point(opts.outWidth, opts.outHeight);
     }
 
     /**
@@ -754,13 +494,6 @@ public final class ImageManager
     {
         Bitmap bmp = null;
 
-        // save bitmap request
-        synchronized (requests)
-        {
-            requests.remove(req);
-            requests.add(req);
-        }
-
         // look for bitmap in already loaded resources
         if (isImageLoaded(req))
         {
@@ -771,17 +504,6 @@ public final class ImageManager
         if (bmp != null)
         {
             return bmp;
-        }
-
-        // wait until image is not downloaded
-        if (req.uri != null && !isImageDownloaded(req.uri))
-        {
-            // start download if necessary
-            if (!isImageDownloading(req.uri))
-            {
-                queueImageDownload(req);
-            }
-            return null;
         }
 
         // load preview image quickly
@@ -823,12 +545,13 @@ public final class ImageManager
         // save starting time
         start = System.currentTimeMillis();
 
-        // start threads
+        // start 7 loading threads
         new LoadThread().start();
         new LoadThread().start();
         new LoadThread().start();
-        new DownloadThread().start();
-        new DownloadThread().start();
-        new DownloadThread().start();
+        new LoadThread().start();
+        new LoadThread().start();
+        new LoadThread().start();
+        new LoadThread().start();
     }
 }
