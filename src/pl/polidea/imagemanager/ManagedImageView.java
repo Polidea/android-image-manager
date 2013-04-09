@@ -409,7 +409,13 @@ public class ManagedImageView extends View
         canvas.clipRect(getPaddingLeft(), getPaddingTop(), getPaddingLeft() + w, getPaddingTop() + h);
 
         // get bitmap from manager
+        final boolean pr = req.preview;
+        if (req.uri != null)
+        {
+            req.preview = false;
+        }
         final Bitmap bmp = ImageManager.getImage(req);
+        req.preview = pr;
         if (bmp == null || bmp.isRecycled())
         {
             return;
