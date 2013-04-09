@@ -227,7 +227,7 @@ public final class ImageManager
         final Options opts = new Options();
 
         // sub-sampling options
-        opts.inSampleSize = preview ? 8 : req.subsample;
+        opts.inSampleSize = (preview ? 8 : 1) * req.subsample;
 
         // load from filename
         if (req.filename != null)
@@ -291,7 +291,7 @@ public final class ImageManager
         if (!preview && (req.width > 0 && req.height > 0))
         {
             final Bitmap sBmp = Bitmap.createScaledBitmap(bmp, req.width, req.height, true);
-            if (sBmp != null)
+            if (sBmp != bmp)
             {
                 bmp.recycle();
                 bmp = sBmp;
