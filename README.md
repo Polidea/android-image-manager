@@ -1,3 +1,9 @@
+---
+
+__This repository is no longer maintained. Issue reports and pull requests will not be attended.__
+
+---
+
 
 Image manager provides performant and easy way to load image resources asynchronously
 with many options like:
